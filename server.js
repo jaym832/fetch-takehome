@@ -5,38 +5,79 @@ const morgan = require("morgan");
 require("dotenv").config();
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-//ROUTES needed
-// add to points (POST)-----
-//spend points (PUT)
-//return all payer point balances (GET)
-
+//importing payerPoints
 let payerPoints = require("./payerPoints.js");
 
-calculateRemainingPoints = function (arr, points) {
+calculateRemainingPoints = function (arr, spentPoints) {
+  //is going to store all the payers taken from
   let payersTakenFrom = [];
+  //is going to store the difference in all the payers taken from
+  let payersDiffArr = [];
+
+  //itertating through arr
   for (let i = 0; i < arr.length; i++) {
+    //if payer points is less than or ==0 then just console.log
     if (arr[i].points <= 0) {
       console.log("payer points less then or == 0");
     } else {
-      if (arr[i].points <= points) {
-        points -= arr[i].points;
+      //if payer points is less than or equal to rewards spent
+      if (arr[i].points <= spentPoints) {
+        let pointDiff = arr[i].points;
+
+        spentPoints -= arr[i].points;
+
         arr[i].points = 0;
+
         payersTakenFrom.push(arr[i]);
+
+        payersDiffArr.push({
+          payer: arr[i].payer,
+          points: -pointDiff,
+        });
       }
-      if (arr[i].points > points) {
-        arr[i].points -= points;
-        points = 0;
+
+      //if payer points is more than points spent
+      if (arr[i].points > spentPoints) {
+        let pointDiff = spentPoints;
+
+        arr[i].points -= spentPoints;
+
+        spentPoints = 0;
+
         payersTakenFrom.push(arr[i]);
+
+        payersDiffArr.push({
+          payer: arr[i].payer,
+          points: -pointDiff,
+        });
       }
-      if (points <= 0) {
-        // console.log(points);
+
+      //if point spent is 0, break from interation
+      if (spentPoints == 0) {
         break;
       }
     }
   }
 
-  return payersTakenFrom;
+  // second interation is going to iterate through array that stored payers where points were taken from and update mongoDB database
+  for (let i = 0; i < payersTakenFrom.length; i++) {
+    payerPoints.findByIdAndUpdate(
+      payersTakenFrom[i]._id,
+      {
+        points: payersTakenFrom[i].points,
+      },
+      (error, data) => {
+        if (error) {
+          return next(error);
+        } else {
+          console.log("payerPoint successfully updated!", data);
+        }
+      }
+    );
+  }
+
+  //returns the array that contains the amount that was taken from each payer
+  return payersDiffArr;
 };
 
 mongoose
@@ -51,7 +92,7 @@ mongoose
 app.use(express.json());
 app.use(morgan("dev"));
 
-//posting to the rewards
+//posting to the payer points
 app.post("/points", (req, res, next) => {
   payerPoints.create(req.body, (error, data) => {
     if (error) {
@@ -62,7 +103,7 @@ app.post("/points", (req, res, next) => {
   });
 });
 
-//removing my rewards and then updating
+//removing payer points and then updating database
 app.put("/points", (req, res, next) => {
   let points = req.body.points;
   payerPoints
@@ -72,28 +113,12 @@ app.put("/points", (req, res, next) => {
       if (err) {
         return err;
       } else {
-        let arr = res.json(data);
-        let payerChanges = calculateRemainingPoints(data, points);
-
-        for (let i = 0; i < payerChanges.length; i++) {
-          payerPoints.findByIdAndUpdate(
-            payerChanges[i]._id,
-            {
-              points: payerChanges[i].points,
-            },
-            (error, data) => {
-              if (error) {
-                return next(error);
-              } else {
-                console.log("payerPoints successfully updated!", data);
-              }
-            }
-          );
-        }
+        let payerDifference = calculateRemainingPoints(data, points);
+        res.json(payerDifference);
       }
     });
 });
-//get all rewards
+//get all payer points
 app.get("/points", (req, res, next) => {
   payerPoints.find((error, data) => {
     if (error) {
@@ -108,6 +133,7 @@ app.listen(PORT, () => {
   console.log(`listening at http://localhost:${PORT}`);
 });
 
+// error handler
 app.use(function (err, req, res, next) {
   console.error(err.message);
   if (!err.statusCode) err.statusCode = 500;
