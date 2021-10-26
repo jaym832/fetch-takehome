@@ -38,7 +38,7 @@ calculateRemainingPoints = function (arr, spentPoints) {
 
       //if payer points is more than points spent
       if (arr[i].points > spentPoints) {
-        let pointDiff = spentPoints;
+        pointDiff = spentPoints;
 
         arr[i].points -= spentPoints;
 
